@@ -1,0 +1,166 @@
+#!/usr/bin/env python3
+import os
+import argparse
+import shutil
+from pathlib import Path
+
+
+def main():
+    dotfiles_home = os.environ.get('DOTFILES_HOME', '~/.dotfiles') 
+
+    parser = argparse.ArgumentParser(prog='dwm', description="""
+        Manages dotfiles in a separate directory and symlinks
+        them into their expected locations.""")
+    parser.add_argument('--dotfiles', '-d', default=dotfiles_home, help="""
+        Directory where dotfiles are stored. Defaults to the 'DOTFILE_HOME'
+        environment variable if specified and to '~/.dotfiles' otherwise.""")
+    subparsers = parser.add_subparsers(required=True)
+
+    parser_add = subparsers.add_parser('add', aliases=['a'], help="""
+        Adds a file or directory to dotfile manager. File will be moved to the
+        dotfile home directory and a symlink will be put in its place.""")
+    parser_add.add_argument('paths', type=str, nargs='+', help="""
+        The path of the file.""")
+    parser_add.set_defaults(func=add)
+
+    parser_remove = subparsers.add_parser('remove', aliases=['r', 'rm'], help="""
+        Remove a file or directory from dotfile manager. The symlink to the file
+        will be removed and the original file will be restored.""")
+    parser_remove.add_argument('paths', type=str, nargs ='+', help="""
+        The path of the symlink or the file in the dotfiles directory.""")
+    parser_remove.set_defaults(func=remove)
+    
+    parser_install = subparsers.add_parser('install', aliases=['i'], help="""
+        Adds symlinks for all of the files in the dotfiles directory.""")
+    parser_install.set_defaults(func=install)
+
+    parser_uninstall = subparsers.add_parser('uninstall', aliases=['u'], help="""
+        Removes symlinks for all of the files in the dotfiles directory.""")
+    parser_uninstall.set_defaults(func=uninstall)
+
+    args = vars(parser.parse_args())
+    func = args.pop('func')
+    func(**args)
+
+
+def ensure_dir(path: str) -> Path:
+    p = Path(path).expanduser().resolve()
+    if not p.exists():
+        p.mkdir(parents = True)
+    return p
+
+
+def add(dotfiles: str, paths: list[str]):
+    dotfiles_path = ensure_dir(dotfiles)
+    for path in paths:
+        src_path = Path(path).expanduser().absolute()
+
+        if not src_path.exists():
+            print(f'{src_path} does not exist')
+            continue
+
+        if src_path.is_symlink():
+            print(f'{src_path} cannot add symlinks to dotfiles')
+            continue
+
+        if src_path.is_relative_to(dotfiles_path):
+            print(f'{src_path} is already in dotfiles')
+            continue
+
+        if not src_path.is_relative_to(Path.home()):
+            print(f'{src_path} not in home directory')
+            continue
+
+        src_path = src_path.resolve()
+        relative_path = src_path.relative_to(Path.home())
+        dest_path = dotfiles_path / str(relative_path)[1:]
+
+        if not str(relative_path).startswith('.'):
+            print(f"{relative_path} does not begin with '.'")
+            continue
+
+        if dest_path.exists():
+            print(f'{src_path} collides with existing file in dotfiles')
+            continue
+
+        if not dest_path.parent.exists():
+            dest_path.parent.mkdir(parents=True)
+       
+        shutil.move(str(src_path), str(dest_path))
+        src_path.symlink_to(dest_path)
+
+
+def remove(dotfiles: str, paths: list[str]):
+    dotfiles_path = ensure_dir(dotfiles)
+    for path in paths:
+        src_path = Path(path).expanduser().resolve()
+
+        if not src_path.exists():
+            print(f'{src_path} does not exist')
+            continue
+
+        if not src_path.is_relative_to(dotfiles_path):
+            print(f'{src_path} not in dotfiles directory')
+            continue
+
+        relative_path = src_path.relative_to(dotfiles_path)
+        dest_path = Path.home() / ('.' + str(relative_path))
+
+        if not dest_path.is_symlink():
+            print(f'{dest_path} is not a symlink')
+            continue
+
+        if dest_path.readlink() != src_path:
+            print(f'{dest_path} does not link to {src_path}')
+            continue
+
+        dest_path.unlink()
+        shutil.move(str(src_path), str(dest_path))
+
+
+def install(dotfiles: str):
+    dotfiles_path = ensure_dir(dotfiles)
+    ensure_dir('~/.config')
+    ensure_dir('~/.local/bin')
+    ensure_dir('~/.local/share')
+    ensure_dir('~/.local/state')
+
+    def install_path(path: Path):
+        for src_path in path.iterdir():
+            relative_path = src_path.relative_to(dotfiles_path)
+            dest_path = Path.home() / ('.' + str(relative_path))
+
+            if str(relative_path).startswith('.'):
+                continue
+            elif dest_path.is_symlink() and dest_path.readlink() == src_path:
+                continue
+            elif dest_path.is_dir():
+                install_path(src_path)
+            elif dest_path.exists():
+                print(f'{dest_path} already exists')
+            else:
+                dest_path.symlink_to(src_path)
+
+    install_path(dotfiles_path)
+
+
+def uninstall(dotfiles: str):
+    dotfiles_path = ensure_dir(dotfiles)
+    
+    def uninstall_path(path: Path):
+        for src_path in path.iterdir():
+            relative_path = src_path.relative_to(dotfiles_path)
+            dest_path = Path.home() / ('.' + str(relative_path))
+
+            if str(relative_path).startswith('.'):
+                continue
+            elif dest_path.is_symlink() and dest_path.readlink() == src_path:
+                dest_path.unlink()
+            elif dest_path.is_dir():
+                uninstall_path(src_path)
+
+    uninstall_path(dotfiles_path)
+
+
+if __name__ == '__main__':
+    main()
