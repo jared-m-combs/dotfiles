@@ -1,0 +1,9 @@
+export XDG_CONFIG_HOME="$HOME/.config"
+export XDG_CACHE_HOME="$HOME/.cache"
+export XDG_DATA_HOME="$HOME/.local/share"
+export XDG_STATE_HOME="$HOME/.local/state"
+export PATH="$PATH:$HOME/.local/bin"
+export GOPATH="$XDG_DATA_HOME/go"
+export DOTFILES_HOME="$HOME/Extra/dotfiles"
+# export CLUTTER_DEFAULT_FPS=144
+# export __GL_SYNC_DISPLAY_DEVICE=DP-4
